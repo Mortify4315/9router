@@ -65,6 +65,11 @@ describe("historical cached-token diagnostic", () => {
     expect(extractCachedTokenMetadata({ prompt_tokens_details: { cached_tokens: "many" } }).status).toBe("malformed-data");
   });
 
+  it("accepts canonical OpenAI and Claude cache shapes", () => {
+    expect(extractCachedTokenMetadata({ prompt_tokens: 100, cached_tokens: 90 }).cachedTokens).toBe(90);
+    expect(extractCachedTokenMetadata({ input_tokens: 100, cache_read_input_tokens: 80 }).cachedTokens).toBe(80);
+  });
+
   it("reports no deterministic association and performs zero mutations", async () => {
     const { db, file } = makeDb();
     insertUsage(db, 1, 0);
@@ -105,6 +110,15 @@ describe("historical cached-token diagnostic", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/Apply mode is unavailable/);
     expect(fs.readFileSync(file).equals(before)).toBe(true);
+  });
+
+  it("rejects apply even when it follows --db", () => {
+    const result = spawnSync(process.execPath, [
+      path.resolve("scripts/analyze-cached-token-backfill.mjs"),
+      "--db", "--apply",
+    ], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/Apply mode is unavailable/);
   });
 
   it("reads committed rows from an active WAL without writing", async () => {

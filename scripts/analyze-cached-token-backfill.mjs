@@ -11,7 +11,9 @@ function number(value) {
 
 export function extractCachedTokenMetadata(tokens) {
   if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) return { status: "malformed-data" };
-  const raw = tokens.prompt_tokens_details?.cached_tokens;
+  const raw = tokens.cached_tokens
+    ?? tokens.cache_read_input_tokens
+    ?? tokens.prompt_tokens_details?.cached_tokens;
   if (raw === undefined || raw === null) return { status: "missing-cache-metadata" };
   const cachedTokens = number(raw);
   if (cachedTokens === null) return { status: "malformed-data" };
@@ -102,7 +104,9 @@ export async function analyzeDatabase(file) {
         report.usageHistory.malformedData++;
         continue;
       }
-      const cached = number(tokens.cached_tokens ?? tokens.cache_read_input_tokens);
+      const cached = number(tokens.cached_tokens
+        ?? tokens.cache_read_input_tokens
+        ?? tokens.prompt_tokens_details?.cached_tokens);
       if (cached === null || cached === 0) report.usageHistory.candidateAffected++;
       else report.usageHistory.alreadyCorrect++;
     }
@@ -125,7 +129,10 @@ export async function analyzeDatabase(file) {
 }
 
 function defaultDatabasePath() {
-  const dataDir = process.env.DATA_DIR || (process.platform === "win32"
+  const configured = process.env.DATA_DIR;
+  const dataDir = (process.platform === "win32" && configured?.startsWith("/"))
+    ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router")
+    : configured || (process.platform === "win32"
     ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router")
     : path.join(os.homedir(), ".9router"));
   return path.join(dataDir, "db", "data.sqlite");
@@ -159,6 +166,9 @@ function format(report, file) {
 }
 
 async function main(argv) {
+  if (argv.includes("--apply")) {
+    throw new Error("Apply mode is unavailable: requestDetails cannot be deterministically associated with usageHistory");
+  }
   let file = defaultDatabasePath();
   let json = false;
   for (let i = 0; i < argv.length; i++) {
@@ -168,7 +178,7 @@ async function main(argv) {
     }
     else if (argv[i] === "--json") json = true;
     else if (argv[i] === "--dry-run") continue;
-    else if (argv[i] === "--apply") throw new Error("Apply mode is unavailable: requestDetails cannot be deterministically associated with usageHistory");
+
     else if (argv[i] === "--help") {
       console.log("Usage: node scripts/analyze-cached-token-backfill.mjs [--db PATH] [--dry-run] [--json]\n\nRead-only diagnostic. No apply mode exists because the current schema has no deterministic cross-table key.");
       return;
